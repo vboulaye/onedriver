@@ -21,13 +21,14 @@ import (
 type Filesystem struct {
 	fuse.RawFileSystem
 
-	metadata  sync.Map
-	db        *bolt.DB
-	content   *LoopbackCache
-	auth      *graph.Auth
-	root      string // the id of the filesystem's root item
-	deltaLink string
-	uploads   *UploadManager
+	metadata              sync.Map
+	db                    *bolt.DB
+	content               *LoopbackCache
+	auth                  *graph.Auth
+	root                  string // the id of the filesystem's root item
+	deltaLink             string
+	uploads               *UploadManager
+	deleteContentAfterUse bool
 
 	sync.RWMutex
 	offline    bool
@@ -52,6 +53,16 @@ const fsVersion = "1"
 
 // NewFilesystem creates a new filesystem
 func NewFilesystem(auth *graph.Auth, cacheDir string) *Filesystem {
+	return newFilesystem(auth, cacheDir, false)
+}
+
+// NewFilesystemWithCacheCleanup creates a filesystem that removes cached file
+// contents after each completed read or successful upload.
+func NewFilesystemWithCacheCleanup(auth *graph.Auth, cacheDir string) *Filesystem {
+	return newFilesystem(auth, cacheDir, true)
+}
+
+func newFilesystem(auth *graph.Auth, cacheDir string, deleteContentAfterUse bool) *Filesystem {
 	// prepare cache directory
 	if _, err := os.Stat(cacheDir); err != nil {
 		if err = os.Mkdir(cacheDir, 0700); err != nil {
@@ -102,11 +113,12 @@ func NewFilesystem(auth *graph.Auth, cacheDir string) *Filesystem {
 
 	// ok, ready to start fs
 	fs := &Filesystem{
-		RawFileSystem: fuse.NewDefaultRawFileSystem(),
-		content:       content,
-		db:            db,
-		auth:          auth,
-		opendirs:      make(map[uint64][]*Inode),
+		RawFileSystem:         fuse.NewDefaultRawFileSystem(),
+		content:               content,
+		db:                    db,
+		auth:                  auth,
+		deleteContentAfterUse: deleteContentAfterUse,
+		opendirs:              make(map[uint64][]*Inode),
 	}
 
 	rootItem, err := graph.GetItem("root", auth)

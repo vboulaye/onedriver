@@ -58,6 +58,8 @@ func main() {
 			"This is equivalent to resetting the program.")
 	readOnly := flag.Bool("read-only", false,
 		"Authenticate with read-only access to OneDrive files.")
+	deleteCacheAfterUse := flag.Bool("delete-cache-after-use", false,
+		"Delete cached file contents after reading or after a successful upload.")
 	versionFlag := flag.BoolP("version", "v", false, "Display program version.")
 	debugOn := flag.BoolP("debug", "d", false, "Enable FUSE debug logging. "+
 		"This logs communication between onedriver and the kernel.")
@@ -129,7 +131,12 @@ func main() {
 	// create the filesystem
 	log.Info().Msgf("onedriver %s", common.Version())
 	auth := graph.Authenticate(config.AuthConfig, authPath, *headless)
-	filesystem := fs.NewFilesystem(auth, cachePath)
+	var filesystem *fs.Filesystem
+	if *deleteCacheAfterUse {
+		filesystem = fs.NewFilesystemWithCacheCleanup(auth, cachePath)
+	} else {
+		filesystem = fs.NewFilesystem(auth, cachePath)
+	}
 	go filesystem.DeltaLoop(30 * time.Second)
 	xdgVolumeInfo(filesystem, auth)
 

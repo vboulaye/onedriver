@@ -143,6 +143,9 @@ func (u *UploadManager) uploadLoop(duration time.Duration) {
 						inode.DriveItem.ETag = session.ETag
 						inode.Unlock()
 					}
+					if u.fs.deleteContentAfterUse {
+						u.fs.scheduleCachedContentDeletion(session.ID)
+					}
 
 					// the old ID is the one that was used to add it to the queue.
 					// cleanup the session.

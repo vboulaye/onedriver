@@ -15,7 +15,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const timeout = time.Second
+const (
+	timeout                  = time.Second
+	cacheContentCleanupDelay = time.Minute
+)
 
 func (f *Filesystem) getInodeContent(i *Inode) *[]byte {
 	i.RLock()
@@ -710,15 +713,34 @@ func (f *Filesystem) Flush(cancel <-chan struct{}, in *fuse.FlushIn) fuse.Status
 
 	// grab a lock to prevent a race condition closing an opened file prior to its use (use after free segfault)
 	inode.Lock()
-	defer inode.Unlock()
 	f.content.Close(id)
-	if f.auth != nil && f.auth.ReadOnly && !hadChanges {
-		if err := f.content.Delete(id); err != nil && !os.IsNotExist(err) {
-			log.Warn().Err(err).Str("id", id).
-				Msg("Could not remove read-only file content from cache.")
-		}
+	inode.Unlock()
+	if f.deleteContentAfterUse && !hadChanges {
+		f.scheduleCachedContentDeletion(id)
 	}
 	return 0
+}
+
+func (f *Filesystem) scheduleCachedContentDeletion(id string) {
+	log.Debug().Str("id", id).
+		Msg("Scheduled cached file content deletion.")
+	time.AfterFunc(cacheContentCleanupDelay, func() {
+		f.deleteCachedContent(id)
+	})
+}
+
+func (f *Filesystem) deleteCachedContent(id string) {
+	if f.content.IsOpen(id) {
+		f.scheduleCachedContentDeletion(id)
+		return
+	}
+	if inode := f.GetID(id); inode != nil && inode.HasChanges() {
+		return
+	}
+	if err := f.content.Delete(id); err != nil && !os.IsNotExist(err) {
+		log.Warn().Err(err).Str("id", id).
+			Msg("Could not remove file content from cache.")
+	}
 }
 
 // Getattr returns a the Inode as a UNIX stat. Holds the read mutex for all of
