@@ -56,6 +56,8 @@ func main() {
 	wipeCache := flag.BoolP("wipe-cache", "w", false,
 		"Delete the existing onedriver cache directory and then exit. "+
 			"This is equivalent to resetting the program.")
+	readOnly := flag.Bool("read-only", false,
+		"Authenticate with read-only access to OneDrive files.")
 	versionFlag := flag.BoolP("version", "v", false, "Display program version.")
 	debugOn := flag.BoolP("debug", "d", false, "Enable FUSE debug logging. "+
 		"This logs communication between onedriver and the kernel.")
@@ -79,6 +81,9 @@ func main() {
 	}
 	if *logLevel != "" {
 		config.LogLevel = *logLevel
+	}
+	if *readOnly {
+		config.AuthConfig.ReadOnly = true
 	}
 
 	zerolog.SetGlobalLevel(common.StringToLevel(config.LogLevel))

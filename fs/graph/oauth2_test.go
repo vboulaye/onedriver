@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -52,4 +53,19 @@ func TestAuthConfigMerge(t *testing.T) {
 	assert.NoError(t, testConfig.applyDefaults())
 	assert.Equal(t, "test", testConfig.RedirectURL)
 	assert.Equal(t, authClientID, testConfig.ClientID)
+}
+
+func TestAuthURLScope(t *testing.T) {
+	t.Parallel()
+
+	authURL, err := url.Parse(getAuthURL(AuthConfig{CodeURL: authCodeURL}))
+	require.NoError(t, err)
+	assert.Equal(t, "user.read files.readwrite.all offline_access", authURL.Query().Get("scope"))
+
+	authURL, err = url.Parse(getAuthURL(AuthConfig{
+		CodeURL:  authCodeURL,
+		ReadOnly: true,
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "user.read files.read.all offline_access", authURL.Query().Get("scope"))
 }

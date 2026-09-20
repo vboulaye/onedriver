@@ -38,12 +38,14 @@ type AuthConfig struct {
 	CodeURL     string `json:"codeURL" yaml:"codeURL"`
 	TokenURL    string `json:"tokenURL" yaml:"tokenURL"`
 	RedirectURL string `json:"redirectURL" yaml:"redirectURL"`
+	ReadOnly    bool   `json:"readOnly" yaml:"readOnly"`
 }
 
 // Auth represents a set of oauth2 authentication tokens
 type Auth struct {
 	AuthConfig   `json:"config"`
 	Account      string `json:"account"`
+	Scope        string `json:"scope,omitempty"`
 	ExpiresIn    int64  `json:"expires_in"` // only used for parsing
 	ExpiresAt    int64  `json:"expires_at"`
 	AccessToken  string `json:"access_token"`
@@ -112,7 +114,16 @@ func (a *Auth) Refresh() {
 		defer resp.Body.Close()
 
 		body, _ := io.ReadAll(resp.Body)
-		json.Unmarshal(body, &a)
+		var tokenResponse Auth
+		json.Unmarshal(body, &tokenResponse)
+		log.Debug().
+			Int("http_code", resp.StatusCode).
+			Str("scope", tokenResponse.Scope).
+			Int64("expires_in", tokenResponse.ExpiresIn).
+			Bool("access_token_received", tokenResponse.AccessToken != "").
+			Bool("refresh_token_received", tokenResponse.RefreshToken != "").
+			Msg("Received Graph OAuth token refresh response.")
+		json.Unmarshal(body, a)
 		if a.ExpiresAt == oldTime {
 			a.ExpiresAt = time.Now().Unix() + a.ExpiresIn
 		}
@@ -131,9 +142,11 @@ func (a *Auth) Refresh() {
 
 // Get the appropriate authentication URL for the Graph OAuth2 challenge.
 func getAuthURL(a AuthConfig) string {
+	scope := authScope(a)
+	log.Debug().Str("scope", scope).Msg("Preparing Graph OAuth authorization request.")
 	return a.CodeURL +
 		"?client_id=" + a.ClientID +
-		"&scope=" + url.PathEscape("user.read files.readwrite.all offline_access") +
+		"&scope=" + url.PathEscape(scope) +
 		"&response_type=code" +
 		"&redirect_uri=" + a.RedirectURL
 }
@@ -182,6 +195,13 @@ func getAuthTokens(a AuthConfig, authCode string) *Auth {
 	body, _ := io.ReadAll(resp.Body)
 	var auth Auth
 	json.Unmarshal(body, &auth)
+	log.Debug().
+		Int("http_code", resp.StatusCode).
+		Str("scope", auth.Scope).
+		Int64("expires_in", auth.ExpiresIn).
+		Bool("access_token_received", auth.AccessToken != "").
+		Bool("refresh_token_received", auth.RefreshToken != "").
+		Msg("Received Graph OAuth token response.")
 	if auth.ExpiresAt == 0 {
 		auth.ExpiresAt = time.Now().Unix() + auth.ExpiresIn
 	}
@@ -211,6 +231,13 @@ func getAuthTokens(a AuthConfig, authCode string) *Auth {
 		)
 	}
 	return &auth
+}
+
+func authScope(config AuthConfig) string {
+	if config.ReadOnly {
+		return "user.read files.read.all offline_access"
+	}
+	return "user.read files.readwrite.all offline_access"
 }
 
 // newAuth performs initial authentication flow and saves tokens to disk. The headless

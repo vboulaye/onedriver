@@ -705,12 +705,19 @@ func (f *Filesystem) Flush(cancel <-chan struct{}, in *fuse.FlushIn) fuse.Status
 		Str("path", inode.Path()).
 		Uint64("nodeID", in.NodeId).
 		Msg("")
+	hadChanges := inode.HasChanges()
 	f.Fsync(cancel, &fuse.FsyncIn{InHeader: in.InHeader})
 
 	// grab a lock to prevent a race condition closing an opened file prior to its use (use after free segfault)
 	inode.Lock()
 	defer inode.Unlock()
 	f.content.Close(id)
+	if f.auth != nil && f.auth.ReadOnly && !hadChanges {
+		if err := f.content.Delete(id); err != nil && !os.IsNotExist(err) {
+			log.Warn().Err(err).Str("id", id).
+				Msg("Could not remove read-only file content from cache.")
+		}
+	}
 	return 0
 }
 
